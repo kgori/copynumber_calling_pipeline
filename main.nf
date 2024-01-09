@@ -115,7 +115,6 @@ process merge_readcounts {
 
 process make_gc_bias {
     input:
-    path bins
     path reference
     path referenceFai
 
@@ -129,7 +128,9 @@ process make_gc_bias {
     bedtools makewindows -g ${referenceFai} -w ${params.binSize} > ivls.bed
     grep -v "^@" ivls.bed |\
       cut -f1-3 |\
-      bedtools nuc -fi ${reference} -bed - > gc_content.bed
+      bedtools nuc -fi ${reference} -bed - |\
+      grep -v "^#" |\
+      awk 'BEGIN { OFS="	" } { print \$1, \$2+1, \$3, \$5 }' > gc_content.bed
     """
 }
 
@@ -356,7 +357,7 @@ workflow {
 
     // Generate the bins and then count reads;
     bins = make_bins_from_reference(reference, referenceFai, referenceDict)
-    gc = make_gc_bias(bins, reference, referenceFai)
+    gc = make_gc_bias(reference, referenceFai)
 
     countsInput = inputs
         .combine(bins)

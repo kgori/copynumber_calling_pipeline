@@ -85,7 +85,7 @@ process clean_readcount_file {
     output:
     path "${id}.cleaned_counts.tsv.gz"
 
-    publishDir "${params.outputDir}/cleaned_counts", mode: 'copy'
+    // publishDir "${params.outputDir}/cleaned_counts", mode: 'copy'
 
     script:
     """
@@ -121,7 +121,7 @@ process make_gc_bias {
     output:
     path "gc_content.bed"
 
-    publishDir "${params.outputDir}/gc_content", mode: 'copy'
+    // publishDir "${params.outputDir}/gc_content", mode: 'copy'
 
     script:
     """
@@ -160,6 +160,34 @@ process compute_logrs {
     """
 }
 
+process compute_logrs_gc {
+    cpus 2
+    executor 'lsf'
+    queue 'normal'
+    memory 32.GB
+    time 12.h
+
+    input:
+    path readcount_matrix
+    path metadata
+    path gc_content
+
+    output:
+    path "parquet/dataset", emit: dataset
+    path "parquet/*.RDS", emit: correctors
+
+    publishDir "${params.outputDir}/compute_logrs", mode: 'link'
+
+    script:
+    """
+    1.1_compute_tumour_logrs.R \
+        --readcounts ${readcount_matrix} \
+        --metadata ${metadata} \
+        --gc-correction ${gc_content} \
+        --outputpath parquet
+    """
+}
+
 process host_cn_filter {
     executor 'lsf'
     queue 'normal'
@@ -176,7 +204,7 @@ process host_cn_filter {
     path "host_cn_filter/*.RDS", emit: rds
     path "host_cn_filter/*.csv", emit: excluded
 
-    publishDir "${params.outputDir}/host_cn_filter", mode: 'link'
+    // publishDir "${params.outputDir}/host_cn_filter", mode: 'link'
 
     script:
     """
@@ -189,40 +217,11 @@ process host_cn_filter {
     """
 }
 
-process host_cn_filter_neuralnet {
-    executor 'lsf'
-    queue 'normal'
-    memory 16.GB
-    time 4.h
-
-    input:
-    path inputs
-    path metadata
-    path modelfile
-    val modeltype
-
-    output:
-    path "host_cn_filter_neuralnet/*.RDS", emit: rds
-    path "host_cn_filter_neuralnet/*.csv", emit: excluded
-
-    publishDir "${params.outputDir}/host_cn_filter", mode: 'link'
-
-    script:
-    """
-    1.2_host_cn_filter.R \
-        --inputpath "." \
-        --metadata ${metadata} \
-        --modelfile ${modelfile} \
-        --modeltype ${modeltype} \
-        --outputpath host_cn_filter_neuralnet
-    """
-}
-
 process segment_samples {
     executor 'lsf'
     queue 'normal'
-    memory 16.GB
-    time 4.h
+    memory 4.GB
+    time 1.h
 
     input:
     path cn_filter
@@ -236,8 +235,10 @@ process segment_samples {
     path "segmented/*.ploidy_assessment.csv", emit: ploidy_assessment
     path "segmented/*.segmentation.csv", emit: segmentation
     path "segmented/*.filtered_segmentation.csv", emit: filtered_segmentation
+    path "segmented/dataset", emit: dataset
+    val samplename, emit: samplename
 
-    publishDir "${params.outputDir}/segmented", mode: 'link'
+    // publishDir "${params.outputDir}/segmented", mode: 'link'
 
     script:
     """
@@ -269,6 +270,7 @@ process combine_ploidy_estimates {
     """
 }
 
+
 process merge_breakpoints {
     executor 'lsf'
     queue 'normal'
@@ -283,7 +285,7 @@ process merge_breakpoints {
     output:
     path "merged_breakpoints/*"
 
-    publishDir "${params.outputDir}/merged_breakpoints", mode: 'link'
+    // publishDir "${params.outputDir}/merged_breakpoints", mode: 'link'
 
     script:
     """
@@ -308,9 +310,11 @@ process filter_breakpoints {
     path metadata
 
     output:
-    path "filter_breakpoints/*"
+    path "filter_breakpoints/*.all_breakpoints.csv", emit: all_breakpoints
+    path "filter_breakpoints/dataset", emit: dataset
+    val samplename, emit: samplename
 
-    publishDir "${params.outputDir}/filter_breakpoints", mode: 'link'
+    // publishDir "${params.outputDir}/filter_breakpoints", mode: 'link'
 
     script:
     """
@@ -321,7 +325,68 @@ process filter_breakpoints {
         ${metadata} \
         filter_breakpoints
     """
+}
 
+process unify_breakpoints {
+    input:
+    path breakpoints
+
+    output:
+    path "unified_breakpoints.csv"
+
+    script:
+    """
+    unify_breakpoints.R
+    """
+}
+
+process finalise_breakpoints {
+    executor 'lsf'
+    queue 'normal'
+    memory 16.GB
+    time 4.h
+
+    input:
+    path breakpoints
+    path dataset, stageAs: "dataset"
+    val samplename
+    path metadata
+
+    output:
+    path "finalised/dataset", emit: dataset
+
+    // publishDir "${params.outputDir}/finalised", mode: 'link'
+
+    script:
+    """
+    1.6_finalise_breakpoints.R \
+        . \
+        ${metadata} \
+        ${samplename} \
+        finalised
+    """
+}
+
+process collect_results {
+    input:
+    path "dataset"
+
+    output:
+    path "updated_dataset"
+
+    publishDir "${params.outputDir}/results",
+      mode: 'copy',
+      saveAs: { filename -> 'dataset' }
+
+    script:
+    """
+    mkdir -p "updated_dataset"
+    for dir in ${dataset}; do
+        for subdir in \${dir}/*; do
+            cp -r \${subdir} "updated_dataset"
+        done
+    done
+    """
 }
 
 workflow {
@@ -357,7 +422,6 @@ workflow {
 
     // Generate the bins and then count reads;
     bins = make_bins_from_reference(reference, referenceFai, referenceDict)
-    gc = make_gc_bias(reference, referenceFai)
 
     countsInput = inputs
         .combine(bins)
@@ -372,20 +436,29 @@ workflow {
     merged = merge_readcounts(cleaned_counts.collect())
 
     // Compute logR
-    logrs = compute_logrs(merged, metadata)
+    if (params.gc_correct) {
+        gc = make_gc_bias(reference, referenceFai)
+        logrs = compute_logrs_gc(merged, metadata, gc)
+    } else {
+        logrs = compute_logrs(merged, metadata)
+    }
 
     // Filter host CN
-    // host_cn_filtered = host_cn_filter(logrs.dataset, metadata, "${params.modelFile}", "${params.modelType}")
-    // host_cn_filtered_nn = host_cn_filter_neuralnet(logrs.dataset, metadata, "${params.neuralnet}", "NN")
+    host_cn_filtered = host_cn_filter(logrs.dataset, metadata, "${params.modelFile}", "${params.modelType}")
 
     // Segment samples
-    // segmented = segment_samples(host_cn_filtered.excluded, logrs.dataset, metadata, reference, samplenames)
-    // ploidy_metadata = combine_ploidy_estimates(segmented.ploidy_metadata.collect())
+    segmented = segment_samples(host_cn_filtered.excluded, logrs.dataset, metadata, reference, samplenames)
+    ploidy_metadata = combine_ploidy_estimates(segmented.ploidy_metadata.collect())
 
     // merge breakpoints
-    // merged = merge_breakpoints(segmented.filtered_segmentation.collect(), ploidy_metadata, params.clone)
+    merged = merge_breakpoints(segmented.filtered_segmentation.collect(), ploidy_metadata, params.clone)
 
     // filter breakpoints
-    // filtered = filter_breakpoints(logrs.dataset, samplenames, merged, ploidy_metadata)
+    filtered = filter_breakpoints(segmented.dataset, segmented.samplename, merged, ploidy_metadata)
+    breakpoints = unify_breakpoints(filtered.all_breakpoints.collect())
 
+    // finalise breakpoints
+    finalised = finalise_breakpoints(breakpoints, filtered.dataset, filtered.samplename, ploidy_metadata)
+    collect_results(finalised.dataset.collect())
 }
+

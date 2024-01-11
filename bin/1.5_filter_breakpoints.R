@@ -12,10 +12,6 @@ parser$add_argument("metadata",
                     help = paste("Metadata table giving",
                                  "purity/tetraploidy/host details",
                                  "for samples [Delimited format]"))
-parser$add_argument("excluded_bins",
-                    help = paste("Any bins to exclude from segmentation",
-                                 "e.g. because they were identified by the",
-                                 "host copy number filter"))
 parser$add_argument("savepath",
                     help = paste("Directory to write results into.",
                                  "Will be created if it does not exist.",
@@ -28,16 +24,6 @@ parser$add_argument("-l", "--filter_tolerance",
                     type = "double", default = 0.25, required = FALSE)
 
 args <- parser$parse_args()
-# Example:
-# args <- list(dataset="../../CTVT/output/2022-06-15_CopyWright_1.1_segment_sample/dataset", # nolint
-#              samplename="982T",
-#              segmentation="../../CTVT/output/2022-06-15_CopyWright_1.2_merge_breakpoints/merged_breakpoints_CTVT.csv", # nolint
-#              metadata="../../CTVT/data/dog_metadata.csv",
-#              savepath="../../CTVT/output/2022-06-15_CopyWright_1.3_filter_breakpoints", # nolint
-#              clone="CTVT",
-#              segmentation_min_size=10,
-#              segmentation_penalty=200,
-#              filter_tolerance=0.25)
 
 for (argname in names(args)) {
     logdebug("%s = %s", argname, args[[argname]])
@@ -219,7 +205,7 @@ loginfo("Writing output to %s", outdir)
 setorder(dt, CHROM, START, END, samplename)
 arrow::write_dataset(dt, outdir, partitioning = "samplename")
 
-clone_ <- metadata[samplename == dt[1, samplename], clone]
+clone_ <- metadata[tumour == dt[1, samplename], clone]
 all_breakpoints <- dt[, .(START = min(START), is_bk = TRUE),
                       by = .(CHROM, segment_id)]
 all_breakpoints[, clone := clone_]

@@ -204,7 +204,7 @@ process host_cn_filter {
     path "host_cn_filter/*.RDS", emit: rds
     path "host_cn_filter/*.csv", emit: excluded
 
-    // publishDir "${params.outputDir}/host_cn_filter", mode: 'link'
+    publishDir "${params.outputDir}/host_cn_filter", mode: 'link'
 
     script:
     """

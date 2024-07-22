@@ -394,19 +394,6 @@ loginfo("(%s) (%.2f,%.2f) TOTAL_SEGMENTS: %d, PLOIDY SCORE: %d",
         sum(sapply(segf, `[[`, "nIntervals")),
         assess_ploidy(dt))
 
-segmentation <- convert_segmentation_to_data_table(seg, samplename_)
-filtered_segmentation <- convert_segmentation_to_data_table(segf, samplename_)
-
-outpath <- file.path(args$savepath, "dataset")
-loginfo("Writing data to %s", outpath)
-setorder(dt, CHROM, START, END, samplename)
-arrow::write_dataset(dt, outpath, partitioning = "samplename")
-
-fwrite(segmentation,
-       file.path(args$savepath, paste0(samplename_, ".segmentation.csv")))
-fwrite(filtered_segmentation,
-       file.path(args$savepath,
-                 paste0(samplename_, ".filtered_segmentation.csv")))
 
 if (args$do_ploidy_assessment) {
     loginfo("Running ploidy assessment")
@@ -447,3 +434,16 @@ if (args$do_ploidy_assessment) {
                              args$winsorization_window_size)
     add_segment_medians_to_table(dt)
 }
+
+outpath <- file.path(args$savepath, "dataset")
+loginfo("Writing data to %s", outpath)
+setorder(dt, CHROM, START, END, samplename)
+arrow::write_dataset(dt, outpath, partitioning = "samplename")
+
+segmentation <- convert_segmentation_to_data_table(seg, samplename_)
+filtered_segmentation <- convert_segmentation_to_data_table(segf, samplename_)
+fwrite(segmentation,
+       file.path(args$savepath, paste0(samplename_, ".segmentation.csv")))
+fwrite(filtered_segmentation,
+       file.path(args$savepath,
+                 paste0(samplename_, ".filtered_segmentation.csv")))

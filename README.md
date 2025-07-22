@@ -7,7 +7,15 @@ Nextflow pipeline for calling copynumber variants from transmissible cancer samp
 Used in the nuclear horizontal transfer in CTVT project.
 
 ## Dependencies
-I've not made a container for this one. It requires that the following R packages are installed:
+There is a Docker container providing all dependencies:
+
+`docker pull kg8422/copynumber_calling_pipeline:latest`,
+
+or a Singularity container:
+
+`singularity pull library://kgori/nextflow/copynumber_calling_pipeline`.
+
+~~I've not made a container for this one.~~ It requires that the following R packages are installed:
  - argparse
  - arrow
  - [cnpipe](https://github.com/kgori/cnpipe.git)
